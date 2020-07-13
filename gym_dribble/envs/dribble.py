@@ -1,4 +1,3 @@
-import math
 import gym
 from gym import spaces, logger
 from gym.utils import seeding
@@ -16,6 +15,9 @@ class DribbleEnv(gym.Env):
     }
 
     def __init__(self):
+        self.debug = True
+        if self.debug:
+            logger.set_level(logger.DEBUG)
         self.gravity = -3000
         self.score = 0
         self.window_width = 800
@@ -74,19 +76,19 @@ class DribbleEnv(gym.Env):
         collision_with_right_wall = self.ball_center_x >= self.window_x_bounds[1]
 
         if collision_with_ground:
-            print("collision with ground")
-            print("initial velocity: ", (self.velocity_x, self.velocity_y))
+            logger.info("collision with ground")
+            logger.info("initial velocity: %s", (self.velocity_x, self.velocity_y))
             self.velocity_y = -self.velocity_y * self.damping_factor
             self.ball_center_y = int(self.window_y_bounds[0])
-            print("final   velocity: ", (self.velocity_x, self.velocity_y))
+            logger.info("final   velocity: %s", (self.velocity_x, self.velocity_y))
 
         elif collision_with_left_wall:
-            print("collision with left wall")
+            logger.info("collision with left wall")
             self.velocity_x = -self.velocity_x * self.damping_factor
             self.ball_center_x = int(self.window_x_bounds[0])
 
         elif collision_with_right_wall:
-            print("collision with right wall")
+            logger.info("collision with right wall")
             self.velocity_x = -self.velocity_x * self.damping_factor
             self.ball_center_x = int(self.window_x_bounds[1])
 
@@ -102,7 +104,7 @@ class DribbleEnv(gym.Env):
         """
         reward = -1.0
         if self.is_coord_inside_ball(coordinate=coordinate):
-            print("applying force")
+            logger.info("applying force")
             x_distance = self.x_distance_from_center(coordinate=coordinate)
             self.velocity_x = self.velocity_after_force * (x_distance / self.ball_radius)
             self.velocity_y = self.velocity_after_force
@@ -113,11 +115,11 @@ class DribbleEnv(gym.Env):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
 
-        print("\n\n#####action: ", action)
-        print("step: ", self.number_of_steps)
-        print("window bounds: ", (self.window_x_bounds, self.window_y_bounds))
-        print("ball center coordinate: ", (self.ball_center_x, self.ball_center_y))
-        print("velocity: ", (self.velocity_x, self.velocity_y))
+        logger.info("\n\n#####action: %s", action)
+        logger.info("step: %s", self.number_of_steps)
+        logger.info("window bounds: %s", (self.window_x_bounds, self.window_y_bounds))
+        logger.info("ball center coordinate: %s", (self.ball_center_x, self.ball_center_y))
+        logger.info("velocity: %s", (self.velocity_x, self.velocity_y))
         self.number_of_steps += 1
 
         self.ball_center_x += int(self.velocity_x * self.dt)
