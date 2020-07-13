@@ -12,7 +12,7 @@ class DribbleEnv(gym.Env):
 
     metadata = {
         'render.modes': ['human', 'rgb_array'],
-        'video.frames_per_second': 60
+        'video.frames_per_second': 120
     }
 
     def __init__(self):
@@ -26,13 +26,13 @@ class DribbleEnv(gym.Env):
         self.ball_scale = 0.25
         self.impulsive_force = 60000
         self.impulse_duration = 0.02  # 20 ms
-        self.velocity_x = 0
-        self.velocity_y = 0
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
         self.mass = 1
         self.damping_factor = 0.8
         self.velocity_after_force = 800
         self.number_of_steps = 0
-        self.max_steps = 100
+        self.dt = 0.01
 
         window_low = np.array([0, 0])
         window_high = np.array([800, 600])
@@ -43,6 +43,8 @@ class DribbleEnv(gym.Env):
             "ball_center_y": spaces.Discrete(self.window_height),
             "ball_radius": spaces.Discrete(self.ball_radius)
         })
+        self.window_x_bounds = (self.ball_radius, self.window_width - self.ball_radius)
+        self.window_y_bounds = (self.ball_radius, self.window_height - self.ball_radius)
 
         self.seed()
         self.viewer = None
@@ -67,31 +69,29 @@ class DribbleEnv(gym.Env):
         return (coordinate[0] - self.ball_center_x) ** 2 + (coordinate[1] - self.ball_center_y) ** 2 <= self.ball_radius ** 2
 
     def check_wall_collision_and_update_state(self):
-        window_x_bounds = (0, self.window_width)
-        window_y_bounds = (0, self.window_height)
-        lower_left, top_left, top_right, lower_right = self.get_bounding_box()
-
-        collision_with_ground = lower_left[1] <= window_y_bounds[0]
-        collision_with_left_wall = lower_left[0] <= window_x_bounds[0]
-        collision_with_right_wall = lower_right[0] >= window_x_bounds[1]
+        collision_with_ground = self.ball_center_y <= self.window_y_bounds[0]
+        collision_with_left_wall = self.ball_center_x <= self.window_x_bounds[0]
+        collision_with_right_wall = self.ball_center_x >= self.window_x_bounds[1]
 
         if collision_with_ground:
             print("collision with ground")
+            print("initial velocity: ", (self.velocity_x, self.velocity_y))
             self.velocity_y = -self.velocity_y * self.damping_factor
-            self.y = window_y_bounds[0] + self.ball_radius
+            self.ball_center_y = int(self.window_y_bounds[0])
+            print("final   velocity: ", (self.velocity_x, self.velocity_y))
 
         elif collision_with_left_wall:
             print("collision with left wall")
             self.velocity_x = -self.velocity_x * self.damping_factor
-            self.x = window_x_bounds[0] + self.ball_radius
+            self.ball_center_x = int(self.window_x_bounds[0])
 
         elif collision_with_right_wall:
             print("collision with right wall")
             self.velocity_x = -self.velocity_x * self.damping_factor
-            self.x = window_x_bounds[1] - self.ball_radius
+            self.ball_center_x = int(self.window_x_bounds[1])
 
     def x_distance_from_center(self, coordinate):
-        return self.ball_center_x - coordinate[0]
+        return abs(self.ball_center_x - coordinate[0])
 
     def apply_force(self, coordinate):
         """
@@ -102,6 +102,7 @@ class DribbleEnv(gym.Env):
         """
         reward = -1.0
         if self.is_coord_inside_ball(coordinate=coordinate):
+            print("applying force")
             x_distance = self.x_distance_from_center(coordinate=coordinate)
             self.velocity_x = self.velocity_after_force * (x_distance / self.ball_radius)
             self.velocity_y = self.velocity_after_force
@@ -112,31 +113,29 @@ class DribbleEnv(gym.Env):
         err_msg = "%r (%s) invalid" % (action, type(action))
         assert self.action_space.contains(action), err_msg
 
-        print("action: ", action)
-
-        ball_center_x, ball_center_y, ball_radius = self.state
+        print("\n\n#####action: ", action)
+        print("step: ", self.number_of_steps)
+        print("window bounds: ", (self.window_x_bounds, self.window_y_bounds))
+        print("ball center coordinate: ", (self.ball_center_x, self.ball_center_y))
+        print("velocity: ", (self.velocity_x, self.velocity_y))
         self.number_of_steps += 1
 
-        done = False
-        if self.number_of_steps >= self.max_steps:
-            done = True
-
-        new_time = time.time()
-        time_elapsed = new_time - self.last_step_time
-        dt = time_elapsed
-        self.ball_center_x += self.velocity_x * dt
-        self.ball_center_y += self.velocity_y * dt + 1 / 2 * self.gravity * dt ** 2
+        self.ball_center_x += int(self.velocity_x * self.dt)
+        self.ball_center_y += int(self.velocity_y * self.dt + 1 / 2 * self.gravity * self.dt ** 2)
+        self.velocity_y = self.velocity_y + self.gravity * self.dt
+        self.check_wall_collision_and_update_state()
 
         reward = self.apply_force(action)
-        self.state = (ball_center_x, ball_center_y, ball_radius)
+        self.state = (self.ball_center_x, self.ball_center_y, self.ball_radius)
 
-        return np.array(self.state), reward, done, {}
+        return np.array(self.state), reward, False, {}
 
     def reset(self):
-        ball_center_x = self.np_random.randint(low=0, high=self.window_width, size=(1,))
-        ball_center_y = self.np_random.randint(low=0, high=self.window_height, size=(1,))
-        ball_radius = self.ball_radius
-        self.state = (ball_center_x, ball_center_y, ball_radius)
+        self.ball_center_x = self.np_random.randint(low=self.window_x_bounds[0], high=self.window_x_bounds[1])
+        self.ball_center_y = self.np_random.randint(low=self.window_y_bounds[0], high=self.window_y_bounds[1])
+        self.velocity_x = 0.0
+        self.velocity_y = 0.0
+        self.state = (self.ball_center_x, self.ball_center_y, self.ball_radius)
         return np.array(self.state)
 
     def render(self, mode='human'):
@@ -149,7 +148,7 @@ class DribbleEnv(gym.Env):
             self.balltrans = rendering.Transform(translation=(self.ball_center_x, self.ball_center_y))
             self.football.add_attr(self.balltrans)
 
-            self.football.set_color(.5, .5, .8)
+            self.football.set_color(0, 0, 0)
             self.viewer.add_geom(self.football)
 
         if self.state is None:
